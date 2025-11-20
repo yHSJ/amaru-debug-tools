@@ -1,0 +1,18 @@
+[package]
+name = "amaru-debug-tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+amaru-network = { git = "https://github.com/pragma-org/amaru.git", branch = "main", package = "amaru-network" }
+amaru-kernel = { git = "https://github.com/pragma-org/amaru.git", branch = "main", package = "amaru-kernel" }
+anyhow = "1.0"
+hex = "0.4"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+pallas-network = { version = "0.33.0" }
+pallas-traverse = { version = "0.33.0" }
+futures-util = "0.3.31"
+clap = { version = "4.5", features = ["derive"] }
+futures-executor = "0.3.31"

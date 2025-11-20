@@ -1,0 +1,9 @@
+/target
+.direnv
+result*
+backup.json
+*.skey
+*.vkey
+*.mnemonic
+challenges.json
+/state*
