@@ -7,15 +7,16 @@ pub use pallas_crypto::{
 use pallas_network::facades::PeerClient;
 use pallas_network::miniprotocols::blockfetch::{Body, Client as BlockfetchClient};
 use pallas_network::miniprotocols::chainsync::NextResponse;
+use pallas_network::miniprotocols::Point as PallasPoint;
 
 use futures_executor::block_on;
-use std::path::PathBuf;
-use std::{collections::HashMap, io::BufReader};
+use std::{collections::HashMap, fs, io::BufReader};
 use std::{
     collections::HashSet,
     io::{BufWriter, Write},
 };
 use std::{fs::File, io::BufRead};
+use std::{fs::OpenOptions, path::PathBuf};
 use tokio::time::sleep;
 
 // --- Imports from amaru-network and amaru-kernel ---
@@ -366,14 +367,16 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
         args.slot
     );
 
-    // We only need the ChainSync client for traversal, but connect_and_intersect returns both.
-    let (mut chainsync, _blockfetch) =
+    let (mut chainsync, mut block_fetch) =
         connect_and_intersect(&args.relay, args.magic, start_point.clone())
             .await
             .context("Failed to connect and intersect at fork point")?;
 
-    let mut file_writer = FileWriter::new(args.output_file.as_ref());
-
+    let mut dump_writer = DumpWriter::new(
+        args.output_dir
+            .inspect(|path| tracing::info!("Will dump trace data to {path:?}..."))
+            .as_ref(),
+    );
     let mut blocks_found = 0;
     // MODIFIED: Changed to HashMap<String, u32> to track counts
     let mut pool_id_counts: HashMap<String, u32> = HashMap::new();
@@ -417,14 +420,28 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
                     *pool_id_counts.entry(hex_string.clone()).or_insert(0) += 1;
                 }
 
+                let block_hash = hex::encode(header.hash());
+
                 tracing::info!(
                     "  [+] Block Slot: {} | Hash: {} | Pool ID: {:?}",
                     header.slot(),
-                    hex::encode(header.hash()),
+                    block_hash,
                     pool_id_hex_option // Use the correctly encoded Option<String>
                 );
 
-                file_writer.write(hex::encode(header.hash()));
+                dump_writer.append("block-hashes", hex::encode(header.hash()));
+
+                if args.dump_blocks {
+                    let block_bytes = block_fetch
+                        .fetch_single(PallasPoint::Specific(header.slot(), header.hash().to_vec()))
+                        .await
+                        .context("Failed to fetch block")?;
+
+                    dump_writer.write(
+                        &format!("{}.{}", header.slot(), header.hash()),
+                        hex::encode(block_bytes),
+                    );
+                }
 
                 blocks_found += 1;
             }
@@ -486,15 +503,14 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
         args.slot
     );
 
-    // We only need the ChainSync client for traversal, but connect_and_intersect returns both.
     let (mut chainsync, mut block_fetch) =
         connect_and_intersect(&args.relay, args.magic, start_point.clone())
             .await
             .context("Failed to connect and intersect at fork point")?;
 
-    let mut file_writer = FileWriter::new(
-        args.output_file
-            .inspect(|path| tracing::info!("attemping to dump transaction IDs to {path:?}..."))
+    let mut dump_writer = DumpWriter::new(
+        args.output_dir
+            .inspect(|path| tracing::info!("Will dump trace data to {path:?}..."))
             .as_ref(),
     );
 
@@ -522,12 +538,17 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
         };
 
         match response {
-            NextResponse::RollForward(hd, tip) => {
+            NextResponse::RollForward(hd, _) => {
                 // Decode Header and Extract Pool ID
                 let header = to_traverse(&hd).context("Failed to decode header")?;
 
+                let hash = header.hash();
+                let slot = header.slot();
+
+                let point = PallasPoint::Specific(slot, hash.to_vec());
+
                 let block_bytes = block_fetch
-                    .fetch_single(tip.0)
+                    .fetch_single(point.clone())
                     .await
                     .context("Failed to fetch block")?;
 
@@ -560,12 +581,20 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
                     pool_id_hex_option
                 );
 
-                file_writer.write(
+                dump_writer.append(
+                    "tx-ids",
                     txs.iter()
                         .map(|tx_id| hex::encode(tx_id))
                         .collect::<Vec<_>>()
                         .join("\n"),
                 );
+
+                if args.dump_blocks {
+                    dump_writer.write(
+                        &format!("{}.{}", header.slot(), header.hash()),
+                        hex::encode(block_bytes),
+                    );
+                }
 
                 transactions_found += txs.len();
             }
@@ -649,26 +678,44 @@ pub fn diff_files(path_a: PathBuf, path_b: PathBuf) -> Result<Vec<String>> {
     Ok(diff)
 }
 
-struct FileWriter {
-    writer: Option<BufWriter<File>>,
+struct DumpWriter {
+    dir: Option<PathBuf>,
 }
-
-impl FileWriter {
-    fn new(path: Option<&PathBuf>) -> Self {
-        let writer = path
-            .and_then(|p| {
-                File::create(p)
-                    .inspect_err(|err| tracing::warn!("Failed to open path {p:?}: {err}"))
-                    .ok()
-            })
-            .map(BufWriter::new);
-
-        Self { writer }
+impl DumpWriter {
+    fn new(dir: Option<&PathBuf>) -> Self {
+        let dir = dir.and_then(|d| {
+            fs::create_dir_all(d)
+                .inspect_err(|err| tracing::warn!("Failed to create directory {d:?}: {err}"))
+                .ok()
+                .map(|_| d.to_path_buf())
+        });
+        Self { dir }
     }
 
-    fn write<T: AsRef<str>>(&mut self, data: T) {
-        if let Some(ref mut w) = self.writer {
-            writeln!(w, "{}", data.as_ref()).ok();
+    fn write<T: AsRef<str>>(&mut self, filename: &str, data: T) {
+        if let Some(ref dir) = self.dir {
+            let path = dir.join(filename);
+            if let Ok(file) = File::create(&path)
+                .inspect_err(|err| tracing::warn!("Failed to create file {:?}: {err}", path))
+            {
+                let mut writer = BufWriter::new(file);
+                writeln!(writer, "{}", data.as_ref()).ok();
+            }
+        }
+    }
+
+    fn append<T: AsRef<str>>(&mut self, filename: &str, data: T) {
+        if let Some(ref dir) = self.dir {
+            let path = dir.join(filename);
+            if let Ok(file) = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .inspect_err(|err| tracing::warn!("Failed to open file {:?}: {err}", path))
+            {
+                let mut writer = BufWriter::new(file);
+                writeln!(writer, "{}", data.as_ref()).ok();
+            }
         }
     }
 }

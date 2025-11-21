@@ -46,13 +46,17 @@ pub struct ForkTracerArgs {
     #[arg(long, default_value_t = 764824073)]
     pub magic: u64,
 
-    /// Output trace to a provided file
+    /// Dump relevant data to a specified directory
     #[arg(long, short)]
-    pub output_file: Option<PathBuf>,
+    pub output_dir: Option<PathBuf>,
 
     /// Run in continuous mode
     #[arg(long, short, default_value_t = false)]
     pub continuous_mode: bool,
+
+    /// Dump block cbor
+    #[arg(long, short, default_value_t = false)]
+    pub dump_blocks: bool,
 }
 
 #[derive(Parser, Debug)]
