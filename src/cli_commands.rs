@@ -111,7 +111,7 @@ fn print_divergence_info(
         // Fetch and report the last good block's CBOR
         let last_good_fetch_result = block_on(async {
             // Re-connect specifically for fetching the last good block
-            let (mut _chainsync, mut blockfetch) = connect_and_intersect(host_a, 2, good.point.clone()).await?;
+            let (mut _chainsync, mut blockfetch) = connect_and_intersect(host_a, 764824073, good.point.clone()).await?;
             fetch_block_cbor(&mut blockfetch, good.point.clone(), host_a).await
         });
 
@@ -177,7 +177,7 @@ fn print_last_good_info(
 /// Main entry point for the slot-divergence command.
 pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
     // Cardano Preview Testnet magic number
-    const MAGIC: u64 = 2;
+    const MAGIC: u64 = 764824073;
 
     let start_hash = hex::decode(&args.hash).context("Failed to decode start block hash from hex string")?;
     let start_point = Point::Specific(args.slot, start_hash);

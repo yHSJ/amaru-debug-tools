@@ -57,7 +57,7 @@ pub struct ProtocolVersionArgs {
     pub relay: String,
 
     /// The network magic number (e.g., 764824073 for Mainnet, 2 for Preview).
-    #[arg(long, default_value_t = 2)]
+    #[arg(long, default_value_t = 764824073)]
     pub magic: u64,
 }
 
