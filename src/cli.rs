@@ -49,6 +49,10 @@ pub struct ForkTracerArgs {
     /// Output trace to a provided file
     #[arg(long, short)]
     pub output_file: Option<PathBuf>,
+
+    /// Run in continuous mode
+    #[arg(long, short, default_value_t = false)]
+    pub continuous_mode: bool,
 }
 
 #[derive(Parser, Debug)]

@@ -379,6 +379,9 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
     let mut pool_id_counts: HashMap<String, u32> = HashMap::new();
 
     tracing::info!("--- Tracing Divergent Chain ---");
+    if args.continuous_mode {
+        tracing::info!("Tracing in continuous mode: will not exit until shutdown");
+    }
 
     loop {
         // Request the next header
@@ -428,18 +431,23 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
                 // Continue the loop from the new point
             }
             NextResponse::Await => {
-                // --- MODIFIED: Final Reporting Logic ---
+                if args.continuous_mode {
+                    tracing::info!(
+                        "Reached tip. Waiting for new blocks... (Total blocks so far: {})",
+                        blocks_found
+                    );
 
-                // 1. Convert HashMap entries into a vector of (count, pool_id) tuples
+                    sleep(std::time::Duration::from_secs(5)).await;
+
+                    continue;
+                }
                 let mut sorted_pools: Vec<(u32, String)> = pool_id_counts
                     .into_iter()
                     .map(|(pool_id, count)| (count, pool_id))
                     .collect();
 
-                // 2. Sort the vector by count. Ascending order puts the most frequent pools at the bottom.
                 sorted_pools.sort_by(|a, b| a.0.cmp(&b.0));
 
-                // 3. Print the sorted list
                 tracing::info!(
                     "\n--- Pool ID Block Distribution ({} unique pools) ---",
                     sorted_pools.len()
@@ -491,6 +499,9 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
     let mut pool_id_counts: HashMap<String, usize> = HashMap::new();
 
     tracing::info!("--- Tracing Chain ---");
+    if args.continuous_mode {
+        tracing::info!("Tracing in continuous mode: will not exit until shutdown");
+    }
 
     loop {
         // Request the next header
@@ -557,18 +568,23 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
                 // Continue the loop from the new point
             }
             NextResponse::Await => {
-                // --- MODIFIED: Final Reporting Logic ---
+                if args.continuous_mode {
+                    tracing::info!(
+                        "Reached tip. Waiting for new blocks... (Total transactions so far: {})",
+                        transactions_found
+                    );
 
-                // 1. Convert HashMap entries into a vector of (count, pool_id) tuples
+                    sleep(std::time::Duration::from_secs(5)).await;
+
+                    continue;
+                }
                 let mut sorted_pools: Vec<(usize, String)> = pool_id_counts
                     .into_iter()
                     .map(|(pool_id, count)| (count, pool_id))
                     .collect();
 
-                // 2. Sort the vector by count. Ascending order puts the most frequent pools at the bottom.
                 sorted_pools.sort_by(|a, b| a.0.cmp(&b.0));
 
-                // 3. Print the sorted list
                 tracing::info!(
                     "\n--- Pool ID Block Distribution ({} unique pools) ---",
                     sorted_pools.len()
