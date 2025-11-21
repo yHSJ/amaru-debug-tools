@@ -1,5 +1,5 @@
 {
-  description = "A reproducible build environment for the Shadow-Harvester Rust project using Naersk.";
+  description = "Tools for debugging amaru node";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
