@@ -26,6 +26,9 @@ pub struct NetworkCommand {
 pub enum NetworkSubcommand {
     /// Synchronizes headers from two relays starting at a specific block and reports the first divergence point.
     SlotDivergence(SlotDivergenceArgs),
+
+    /// Queries a relay to determine the highest supported Ouroboros network protocol version.
+    ProtocolVersion(ProtocolVersionArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -47,13 +50,26 @@ pub struct SlotDivergenceArgs {
     pub hash: String,
 }
 
+#[derive(Parser, Debug)]
+pub struct ProtocolVersionArgs {
+    /// Address and port of the target relay (e.g., node.example.com:3001).
+    #[arg(long)]
+    pub relay: String,
+
+    /// The network magic number (e.g., 764824073 for Mainnet, 2 for Preview).
+    #[arg(long, default_value_t = 2)]
+    pub magic: u64,
+}
+
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
         Command::Network(network_cmd) => match network_cmd.command {
+            // Updated to include the new command
             NetworkSubcommand::SlotDivergence(args) => cli_commands::run_slot_divergence(args).await,
+            NetworkSubcommand::ProtocolVersion(args) => cli_commands::run_protocol_version(args).await,
         },
     }
 }

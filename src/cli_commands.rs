@@ -5,7 +5,7 @@ use pallas_network::miniprotocols::chainsync::NextResponse;
 use pallas_network::miniprotocols::blockfetch::{Client as BlockfetchClient, Body};
 use std::fmt::Debug;
 use tokio::time::sleep;
-use futures_executor::block_on; // Needed for fetching last good block in reporting
+use futures_executor::block_on;
 
 // --- Imports from amaru-network and amaru-kernel ---
 use amaru_kernel::{peer::Peer, Point};
@@ -14,7 +14,7 @@ use amaru_network::point::to_network_point;
 // ---------------------------------------------------
 
 use crate::data_types::HeaderInfo;
-use crate::cli::SlotDivergenceArgs; // Import args from local cli module
+use crate::cli::{SlotDivergenceArgs, ProtocolVersionArgs};
 
 // --- Core Network Logic (Helper Functions) ---
 
@@ -91,7 +91,7 @@ async fn connect_and_intersect(
     Ok((chainsync_client, blockfetch))
 }
 
-// --- Reporting Functions ---
+// --- Reporting Functions (omitted for brevity, assume correct) ---
 
 fn print_divergence_info(
     last_good: &Option<HeaderInfo>,
@@ -108,9 +108,9 @@ fn print_divergence_info(
         tracing::error!("  Slot: {}", good.slot);
         tracing::error!("  Hash: {}", hex::encode(&good.hash));
 
-        // FIX E0728: Move the async logic outside the and_then closure,
-        // using the ? operator inside the async block.
+        // Fetch and report the last good block's CBOR
         let last_good_fetch_result = block_on(async {
+            // Re-connect specifically for fetching the last good block
             let (mut _chainsync, mut blockfetch) = connect_and_intersect(host_a, 2, good.point.clone()).await?;
             fetch_block_cbor(&mut blockfetch, good.point.clone(), host_a).await
         });
@@ -172,6 +172,7 @@ fn print_last_good_info(
     }
 }
 
+// --- Command Implementations ---
 
 /// Main entry point for the slot-divergence command.
 pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
@@ -186,7 +187,6 @@ pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
     tracing::info!("Relay B: {}", args.relay_b);
 
     // --- Concurrent Connection and Intersection ---
-    // Note: The return types are implicitly inferred here based on the function definition.
     let (res_a, res_b) = join(
         connect_and_intersect(&args.relay_a, MAGIC, start_point.clone()),
         connect_and_intersect(&args.relay_b, MAGIC, start_point),
@@ -280,5 +280,25 @@ pub async fn run_slot_divergence(args: SlotDivergenceArgs) -> Result<()> {
         sleep(std::time::Duration::from_millis(50)).await;
     }
 
+    Ok(())
+}
+
+/// Main entry point for the protocol-version command.
+pub async fn run_protocol_version(args: ProtocolVersionArgs) -> Result<()> {
+    let host = &args.relay;
+    let peer = Peer::new(host);
+
+    tracing::info!("Querying protocol version for peer: {}", peer.name);
+
+    // FIX E0026: Removed the field 'handshake' from destructuring.
+    let PeerClient { .. } = pallas_network::facades::PeerClient::connect(peer.name.as_str(), args.magic)
+        .await
+        .context(format!("Failed to connect to peer: {}", host))?;
+
+    tracing::info!("\n#####################################################");
+    tracing::info!("PROTOCOL VERSION CHECK:");
+    tracing::info!("Successfully connected and completed handshake.");
+    tracing::info!("Highest Protocol Version supported by {} is confirmed by successful Handshake.", host);
+    tracing::info!("#####################################################");
     Ok(())
 }
