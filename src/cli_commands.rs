@@ -384,11 +384,14 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
     }
 
     loop {
-        // Request the next header
-        let response_result = chainsync.request_next().await;
+        let result = if chainsync.has_agency() {
+            chainsync.request_next().await
+        } else {
+            chainsync.await_next().await
+        };
 
-        let response = match response_result {
-            Ok(r) => r,
+        let response = match result {
+            Ok(result) => result,
             Err(e) => {
                 tracing::error!("ChainSync error during traversal: {}", e);
                 break;
@@ -504,16 +507,20 @@ pub async fn run_transaction_tracer(args: ForkTracerArgs) -> Result<()> {
     }
 
     loop {
-        // Request the next header
-        let response_result = chainsync.request_next().await;
+        let result = if chainsync.has_agency() {
+            chainsync.request_next().await
+        } else {
+            chainsync.await_next().await
+        };
 
-        let response = match response_result {
-            Ok(r) => r,
+        let response = match result {
+            Ok(result) => result,
             Err(e) => {
                 tracing::error!("ChainSync error during traversal: {}", e);
                 break;
             }
         };
+
         match response {
             NextResponse::RollForward(hd, tip) => {
                 // Decode Header and Extract Pool ID
