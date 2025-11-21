@@ -1,9 +1,15 @@
+use std::path::PathBuf;
+
+use crate::cli_commands;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use crate::cli_commands;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Amaru Debug Tools CLI for Cardano networking diagnostics.")]
+#[command(
+    author,
+    version,
+    about = "Amaru Debug Tools CLI for Cardano networking diagnostics."
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -39,16 +45,37 @@ pub struct ForkTracerArgs {
     /// The network magic number (e.g., 2 for Preview).
     #[arg(long, default_value_t = 764824073)]
     pub magic: u64,
+
+    /// Output trace to a provided file
+    #[arg(long, short)]
+    pub output_file: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct TracerDiffArgs {
+    /// The path to the file that contains the dump of the "OK" fork
+    #[arg(long)]
+    pub ok_file: PathBuf,
+    /// The path to the file that contains the dump of the "KO" fork
+    #[arg(long)]
+    pub ko_file: PathBuf,
+    /// Output the differnce between ok - ko to a provided file
+    #[arg(long)]
+    pub output_file: PathBuf,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum NetworkSubcommand {
     /// Synchronizes headers from two relays starting at a specific block and reports the first divergence point.
     SlotDivergence(SlotDivergenceArgs),
-
     /// Queries a relay to determine the highest supported Ouroboros network protocol version.
     ProtocolVersion(ProtocolVersionArgs),
+    /// Traces the blocks from a given point on a chain
     ForkTracer(ForkTracerArgs),
+    /// Traces all transactions from a given point on a chain
+    TransactionTracer(ForkTracerArgs),
+    /// Find the difference between two runs of either tracer command
+    TracerDiff(TracerDiffArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -81,16 +108,22 @@ pub struct ProtocolVersionArgs {
     pub magic: u64,
 }
 
-
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
         Command::Network(network_cmd) => match network_cmd.command {
-            // Updated to include the new command
-            NetworkSubcommand::SlotDivergence(args) => cli_commands::run_slot_divergence(args).await,
-            NetworkSubcommand::ProtocolVersion(args) => cli_commands::run_protocol_version(args).await,
+            NetworkSubcommand::SlotDivergence(args) => {
+                cli_commands::run_slot_divergence(args).await
+            }
+            NetworkSubcommand::ProtocolVersion(args) => {
+                cli_commands::run_protocol_version(args).await
+            }
             NetworkSubcommand::ForkTracer(args) => cli_commands::run_fork_tracer(args).await,
+            NetworkSubcommand::TransactionTracer(args) => {
+                cli_commands::run_transaction_tracer(args).await
+            }
+            NetworkSubcommand::TracerDiff(args) => cli_commands::tracer_diff(args),
         },
     }
 }
