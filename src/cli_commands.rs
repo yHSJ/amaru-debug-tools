@@ -12,6 +12,7 @@ use pallas_traverse::MultiEraHeader;
 use std::fmt::Debug;
 use tokio::time::sleep;
 use futures_executor::block_on;
+use std::collections::HashMap;
 
 // --- Imports from amaru-network and amaru-kernel ---
 use amaru_kernel::{peer::Peer, Point};
@@ -332,6 +333,8 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
     .context("Failed to connect and intersect at fork point")?;
 
     let mut blocks_found = 0;
+    // MODIFIED: Changed to HashMap<String, u32> to track counts
+    let mut pool_id_counts: HashMap<String, u32> = HashMap::new();
 
     tracing::info!("--- Tracing Divergent Chain ---");
 
@@ -352,23 +355,26 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
                 // Decode Header and Extract Pool ID
                 let header = to_traverse(&hd).context("Failed to decode header")?;
 
-                // Pool ID extraction: We use the `issuer_vkey()` field available
-                // in MultiEraHeader and hash it to get the unique pool identifier (Pool ID).
-                let pool_id_hex = header
+                let pool_id_hex_option: Option<String> = header
                     .issuer_vkey()
                     .and_then(|vkey_bytes| {
                         // FIX E0308: Convert &[u8] to ed25519::PublicKey before hashing
                         ed25519::PublicKey::try_from(vkey_bytes)
                             .ok()
                             .map(|vkey| issuer_to_pool_id(&vkey))
-                            .map(|pool_id| hex::encode(pool_id))
+                            .map(|pool_id| hex::encode(pool_id)) // <-- Hex encoding happens here
                     });
+
+                // MODIFIED: Update count in the HashMap instead of inserting into a HashSet
+                if let Some(ref hex_string) = pool_id_hex_option {
+                    *pool_id_counts.entry(hex_string.clone()).or_insert(0) += 1;
+                }
 
                 tracing::info!(
                     "  [+] Block Slot: {} | Hash: {} | Pool ID: {:?}",
                     header.slot(),
                     hex::encode(header.hash()),
-                    pool_id_hex
+                    pool_id_hex_option // Use the correctly encoded Option<String>
                 );
 
                 blocks_found += 1;
@@ -379,6 +385,26 @@ pub async fn run_fork_tracer(args: ForkTracerArgs) -> Result<()> {
                 // Continue the loop from the new point
             }
             NextResponse::Await => {
+                // --- MODIFIED: Final Reporting Logic ---
+
+                // 1. Convert HashMap entries into a vector of (count, pool_id) tuples
+                let mut sorted_pools: Vec<(u32, String)> = pool_id_counts
+                    .into_iter()
+                    .map(|(pool_id, count)| (count, pool_id))
+                    .collect();
+
+                // 2. Sort the vector by count. Ascending order puts the most frequent pools at the bottom.
+                sorted_pools.sort_by(|a, b| a.0.cmp(&b.0));
+
+                // 3. Print the sorted list
+                tracing::info!("\n--- Pool ID Block Distribution ({} unique pools) ---", sorted_pools.len());
+                tracing::info!("(Pools are sorted by block count, ascending: least frequent at top, most frequent at bottom)");
+                for (count, pool_id) in sorted_pools.iter() {
+                    // Use format string to align the count nicely
+                    println!("  Blocks: {:<4} | Pool ID: {}", count, pool_id);
+                }
+                tracing::info!("----------------------------------------------------");
+
                 tracing::info!("--- Reached Tip ---");
                 tracing::info!("Traversal complete. Found {} blocks on the divergent chain.", blocks_found);
                 break;
